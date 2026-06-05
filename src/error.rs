@@ -25,4 +25,9 @@ pub enum GraniteError {
     /// The response body did not match the expected wire type.
     #[error("granite response decode error: {0}")]
     Decode(String),
+    /// `await_decision` gave up before the request reached a terminal state.
+    /// The request is unaffected — still pending, and can be awaited again by
+    /// id (state lives in the record, not the caller).
+    #[error("timed out after {0:?} waiting for an approval decision")]
+    Timeout(std::time::Duration),
 }

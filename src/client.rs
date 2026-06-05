@@ -6,7 +6,8 @@ use uuid::Uuid;
 use crate::error::GraniteError;
 use crate::headers;
 use crate::model::{
-    ApprovalGrant, ApprovalRequest, CreateApprovalRequest, GrantVerification, VerifyGrantRequest,
+    ApprovalGrant, ApprovalRequest, ApprovalRequestStatus, CreateApprovalRequest, GrantVerification,
+    VerifyGrantRequest,
 };
 
 /// How the client authenticates to Granite.
@@ -168,6 +169,123 @@ impl GraniteClient {
         );
         self.send_json(builder).await
     }
+
+    /// Single non-blocking check: the terminal [`Decision`] if the request has
+    /// been decided, or `None` while still pending.
+    ///
+    /// This is the runtime-agnostic core of in-flow approval: any caller — an
+    /// AI agent, a CLI, a CI job, a web handler — drives its own loop around
+    /// this, and can **resume** later from just the `request_id` (the state
+    /// lives in the Granite record, not in the caller).
+    pub async fn poll_decision(
+        &self,
+        acting_user: &ActingUser,
+        request_id: Uuid,
+    ) -> Result<Option<Decision>, GraniteError> {
+        let request = self.get_approval_request(acting_user, request_id).await?;
+        Ok(decision_from_request(request))
+    }
+
+    /// Block until the request reaches a terminal state, polling every
+    /// `config.interval`. Resumable: pass a known id to await a request created
+    /// in an earlier process. Returns [`GraniteError::Timeout`] if
+    /// `config.timeout` elapses first — the request stays pending and can be
+    /// awaited again.
+    pub async fn await_decision(
+        &self,
+        acting_user: &ActingUser,
+        request_id: Uuid,
+        config: AwaitConfig,
+    ) -> Result<Decision, GraniteError> {
+        let started = std::time::Instant::now();
+        loop {
+            if let Some(decision) = self.poll_decision(acting_user, request_id).await? {
+                return Ok(decision);
+            }
+            if let Some(timeout) = config.timeout {
+                if started.elapsed() >= timeout {
+                    return Err(GraniteError::Timeout(timeout));
+                }
+            }
+            tokio::time::sleep(config.interval).await;
+        }
+    }
+
+    /// Create a request and await its decision — the common in-flow case.
+    /// Equivalent to [`create_approval_request`](Self::create_approval_request)
+    /// followed by [`await_decision`](Self::await_decision).
+    pub async fn request_and_await(
+        &self,
+        acting_user: &ActingUser,
+        request: &CreateApprovalRequest,
+        config: AwaitConfig,
+    ) -> Result<Decision, GraniteError> {
+        let created = self.create_approval_request(acting_user, request).await?;
+        self.await_decision(acting_user, created.id, config).await
+    }
+}
+
+/// The terminal outcome of an approval request, for callers driving the
+/// request → decide → react loop. Carries the full request so a caller can read
+/// `grant_id` (to verify/redeem the resulting grant) or the denial reason.
+#[derive(Debug, Clone)]
+pub enum Decision {
+    /// The owner approved the request.
+    Approved(ApprovalRequest),
+    /// The owner denied it; see [`Decision::reason`].
+    Denied(ApprovalRequest),
+}
+
+impl Decision {
+    /// The underlying request record (approved or denied).
+    #[must_use]
+    pub fn request(&self) -> &ApprovalRequest {
+        match self {
+            Decision::Approved(request) | Decision::Denied(request) => request,
+        }
+    }
+
+    /// Whether the request was approved.
+    #[must_use]
+    pub fn is_approved(&self) -> bool {
+        matches!(self, Decision::Approved(_))
+    }
+
+    /// The decision reason, if one was recorded (typically on denial). Lets a
+    /// caller surface "denied: <why>" — an agent to pivot on, a CLI to print.
+    #[must_use]
+    pub fn reason(&self) -> Option<&str> {
+        self.request().decision_reason.as_deref()
+    }
+}
+
+/// Pacing for [`GraniteClient::await_decision`]. [`Default`] polls every 3s
+/// with no overall deadline (wait indefinitely).
+#[derive(Debug, Clone)]
+pub struct AwaitConfig {
+    /// Delay between status polls.
+    pub interval: std::time::Duration,
+    /// Optional overall deadline; `None` waits indefinitely.
+    pub timeout: Option<std::time::Duration>,
+}
+
+impl Default for AwaitConfig {
+    fn default() -> Self {
+        Self {
+            interval: std::time::Duration::from_secs(3),
+            timeout: None,
+        }
+    }
+}
+
+/// Pure map from a request to its terminal [`Decision`], or `None` while
+/// pending. The network-free core of the poll/await loop.
+fn decision_from_request(request: ApprovalRequest) -> Option<Decision> {
+    match request.status {
+        ApprovalRequestStatus::Pending => None,
+        ApprovalRequestStatus::Approved => Some(Decision::Approved(request)),
+        ApprovalRequestStatus::Denied => Some(Decision::Denied(request)),
+    }
 }
 
 /// The user a request acts on behalf of, plus their write flag and optional
@@ -210,5 +328,47 @@ impl ActingUser {
     pub fn with_agent_id(mut self, agent_id: impl Into<String>) -> Self {
         self.agent_id = Some(agent_id.into());
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Build an ApprovalRequest from minimal JSON (lenient deserialize) so we can
+    // exercise the pure decision mapping without a server.
+    fn request_with_status(status: &str) -> ApprovalRequest {
+        serde_json::from_value(serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000001",
+            "owner_uid": "owner1",
+            "requester_app_id": "drive",
+            "title": "delete files",
+            "summary": "remove three files",
+            "requested_action": "delete",
+            "requested_resource": "storage:drive:/sites/x",
+            "status": status,
+            "decision_reason": "those files are still needed"
+        }))
+        .expect("minimal approval request should deserialize")
+    }
+
+    #[test]
+    fn pending_request_yields_no_decision() {
+        assert!(decision_from_request(request_with_status("pending")).is_none());
+    }
+
+    #[test]
+    fn approved_maps_to_approved_decision() {
+        let decision = decision_from_request(request_with_status("approved"))
+            .expect("approved is terminal");
+        assert!(decision.is_approved());
+    }
+
+    #[test]
+    fn denied_maps_to_denied_decision_and_surfaces_reason() {
+        let decision =
+            decision_from_request(request_with_status("denied")).expect("denied is terminal");
+        assert!(!decision.is_approved());
+        assert_eq!(decision.reason(), Some("those files are still needed"));
     }
 }

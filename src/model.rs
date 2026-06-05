@@ -112,6 +112,14 @@ pub struct CreateApprovalRequest {
     pub callback_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub callback_secret: Option<String>,
+    /// Optional https deep-link to the requester's own live consent view, which
+    /// Granite offers as "Review in <app> →" (fabric-and-authority opt-in).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail_url: Option<String>,
+    /// Optional structured detail (e.g. the concrete files affected) Granite
+    /// renders in its generic consent view without the requester hosting a UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_detail: Option<Value>,
 }
 
 /// The approval-request record Granite returns from create and status reads.
@@ -142,6 +150,16 @@ pub struct ApprovalRequest {
     pub grant_id: Option<Uuid>,
     #[serde(default)]
     pub trace_id: Option<String>,
+    /// Deep-link to the requester's live consent view, if any.
+    #[serde(default)]
+    pub detail_url: Option<String>,
+    /// Requester-supplied structured detail Granite can render, if any.
+    #[serde(default)]
+    pub structured_detail: Option<Value>,
+    /// Decision reason, denormalized onto the request when decided — lets a
+    /// polling client return "denied + why" without a second fetch.
+    #[serde(default)]
+    pub decision_reason: Option<String>,
 }
 
 /// A standing grant record, as embedded in a verification response.

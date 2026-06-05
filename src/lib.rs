@@ -25,7 +25,7 @@ pub mod headers;
 pub mod intent;
 pub mod model;
 
-pub use client::{ActingUser, Auth, GraniteClient};
+pub use client::{ActingUser, Auth, AwaitConfig, Decision, GraniteClient};
 pub use error::GraniteError;
 pub use intent::{DestructiveIntent, PurgeKind};
 pub use model::{

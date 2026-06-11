@@ -26,6 +26,12 @@ pub mod intent;
 pub mod model;
 
 pub use client::{ActingUser, Auth, AwaitConfig, Decision, GraniteClient};
+/// The shared trust-environment primitive, re-exported so consumers speak one
+/// type: `granite_client::Environment`. An approval is minted in exactly one of
+/// these (derived by Granite from the caller's keyset — never requester-set), and
+/// a destructive action must only act on an approval whose environment matches the
+/// caller's own. See [`ApprovalRequest::assert_environment`].
+pub use capability::Environment;
 pub use error::GraniteError;
 pub use intent::{DestructiveIntent, PurgeKind};
 pub use model::{
@@ -83,6 +89,49 @@ mod tests {
         assert_eq!(req.status, ApprovalRequestStatus::Pending);
         assert_eq!(req.requester_app_id, "amber");
         assert!(!req.status.is_terminal());
+        // A body without `environment` (a pre-split Granite) reads as Prod.
+        assert_eq!(req.environment, Environment::Prod);
+    }
+
+    #[test]
+    fn environment_defaults_to_prod_and_gates_cross_env_isolation() {
+        let base = json!({
+            "id": "11111111-1111-1111-1111-111111111111",
+            "owner_uid": "alice",
+            "requester_app_id": "drive",
+            "title": "Permanently erase owner",
+            "summary": "crypto-shred",
+            "requested_action": "crypto_shred",
+            "requested_resource": "drive:owner:alice",
+            "status": "approved"
+        });
+
+        // Untagged approval → strictest reading, Prod.
+        let untagged: ApprovalRequest = serde_json::from_value(base.clone()).unwrap();
+        assert_eq!(untagged.environment, Environment::Prod);
+
+        // A Test-tagged approval round-trips to Test { tenant } (using the SHARED
+        // type's own serde, so client and Granite can't disagree on the wire form).
+        let test_env = Environment::Test { tenant: "acme".into() };
+        let mut tagged = base.clone();
+        tagged["environment"] = serde_json::to_value(&test_env).unwrap();
+        let req: ApprovalRequest = serde_json::from_value(tagged).unwrap();
+        assert_eq!(req.environment, test_env);
+
+        // Isolation: an approval only authorizes an action in its OWN environment.
+        assert!(req.assert_environment(&test_env).is_ok());
+        assert!(
+            matches!(
+                req.assert_environment(&Environment::Prod),
+                Err(GraniteError::EnvironmentMismatch { .. })
+            ),
+            "a Test approval must NOT authorize a Prod action"
+        );
+        assert!(
+            untagged.assert_environment(&test_env).is_err(),
+            "a Prod approval must NOT be settled by a Test caller"
+        );
+        assert!(untagged.assert_environment(&Environment::Prod).is_ok());
     }
 
     #[test]

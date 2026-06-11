@@ -1,6 +1,6 @@
 [package]
 name = "granite-client"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Typed async client for the Granite approval core. One source of truth for the wire contract, header policy, and destructive-intent taxonomy."
 license = "MIT OR Apache-2.0"
@@ -10,6 +10,10 @@ keywords = ["approval", "granite", "agent", "consent"]
 categories = ["api-bindings", "authentication"]
 
 [dependencies]
+# The shared trust-environment primitive (`Environment { Prod, Test{tenant} }`).
+# Reused — not re-declared — so Granite, this client, and capability all speak
+# ONE environment type, and a Test approval can't launder into Prod.
+capability = { git = "https://github.com/stackwell-labs/capability.git", tag = "v0.2.0" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

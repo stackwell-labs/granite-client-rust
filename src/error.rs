@@ -30,4 +30,15 @@ pub enum GraniteError {
     /// id (state lives in the record, not the caller).
     #[error("timed out after {0:?} waiting for an approval decision")]
     Timeout(std::time::Duration),
+    /// An approval was minted in a different trust environment than the caller
+    /// is running in — e.g. a `Test` approval presented to authorize a `Prod`
+    /// destructive action. Refused: a test authority must never launder into
+    /// prod (or vice versa). Raised by [`crate::ApprovalRequest::assert_environment`].
+    #[error("approval environment mismatch: expected {expected}, found {found}")]
+    EnvironmentMismatch {
+        /// The environment the caller is running in.
+        expected: String,
+        /// The environment the approval was actually minted in.
+        found: String,
+    },
 }

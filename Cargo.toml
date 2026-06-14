@@ -1,6 +1,6 @@
 [package]
 name = "granite-client"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 description = "Typed async client for the Granite approval core. One source of truth for the wire contract, header policy, and destructive-intent taxonomy."
 license = "MIT OR Apache-2.0"
@@ -13,11 +13,11 @@ categories = ["api-bindings", "authentication"]
 # The shared trust-environment primitive (`Environment { Prod, Test{tenant} }`).
 # Reused — not re-declared — so Granite, this client, and capability all speak
 # ONE environment type, and a Test approval can't launder into Prod.
-# Local lattice build (v0.4.0): the v0.3.0 -> v0.4.0 capability jump is breaking,
-# so a URL `[patch]` cannot satisfy a `tag=v0.3.0` requirement; while building the
-# in-progress lattice locally the pin is the path dep directly. (Release re-pins to
-# a published `tag = "v0.4.0"`.)
-capability = { path = "/home/coreygirard/agent-platform/capability" }
+# Pinned to the published capability v0.4.0 lattice tag. granite-client uses only
+# `Environment` (Prod / Test{tenant}), which is unchanged across the v0.3->v0.4
+# lattice bump, so this is a clean re-pin (the lattice's breaking verify/rights API
+# is not used here). Bumped to granite-client v0.4.0 to track the capability major.
+capability = { git = "https://github.com/stackwell-labs/capability.git", tag = "v0.4.0" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

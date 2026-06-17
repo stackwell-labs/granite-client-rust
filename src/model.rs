@@ -218,6 +218,33 @@ pub struct ApprovalGrant {
     #[serde(default)]
     pub limits: Option<Value>,
     pub status: ApprovalGrantStatus,
+    /// The trust environment Granite minted this grant in — `Prod` or
+    /// `Test { tenant }`. Derived by Granite from the caller's keyset/token, NOT
+    /// requester-supplied, so it cannot be forged. Defaults to `Prod` only for
+    /// transition (a grant from a pre-split Granite); a consumer about to run an
+    /// irreversible action MUST gate on [`ApprovalGrant::assert_environment`] so a
+    /// `Test` grant can never authorize a `Prod` one.
+    #[serde(default = "environment_prod_default")]
+    pub environment: Environment,
+}
+
+impl ApprovalGrant {
+    /// Isolation guard — call this before acting on the grant for any
+    /// irreversible operation. Confirms the grant was minted in the same trust
+    /// environment the caller is running in; a `Test` grant must never authorize
+    /// a `Prod` destructive action, nor a `Prod` grant be exercised by a `Test`
+    /// caller. This is `capability`'s "no laundering into prod", enforced on the
+    /// grant plane at the point of use.
+    pub fn assert_environment(&self, expected: &Environment) -> Result<(), GraniteError> {
+        // Delegates to capability's ONE canonical no-laundering guard (since
+        // capability v0.3.0), keeping this crate's `GraniteError` surface stable.
+        self.environment.ensure_matches(expected).map_err(|_| {
+            GraniteError::EnvironmentMismatch {
+                expected: expected.to_string(),
+                found: self.environment.to_string(),
+            }
+        })
+    }
 }
 
 /// Body for `POST /v1/grants/verify` (and the project-scoped variant).

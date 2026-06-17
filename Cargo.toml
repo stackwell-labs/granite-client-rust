@@ -1,6 +1,6 @@
 [package]
 name = "granite-client"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Typed async client for the Granite approval core. One source of truth for the wire contract, header policy, and destructive-intent taxonomy."
 license = "MIT OR Apache-2.0"

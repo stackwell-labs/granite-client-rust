@@ -12,7 +12,7 @@ use crate::model::{
 
 /// How the client authenticates to Granite.
 ///
-/// The two paths Granite supports map to two variants here, so a caller
+/// Each path Granite supports maps to one variant here, so a caller
 /// cannot half-configure (e.g. set an app id but forget to flag itself as
 /// app-credentialled, which silently sent the wrong headers in the
 /// hand-rolled clients).
@@ -30,6 +30,21 @@ pub enum Auth {
         /// The registered app id.
         app_id: String,
     },
+    /// A chirp identity token presented as `Authorization: Bearer <token>`.
+    ///
+    /// This is the path Granite's operator gate consumes: Granite authenticates
+    /// the bearer via `chirp_auth_client::verify_chirp_id_token`, then resolves
+    /// operator status LIVE via chirp `POST /operator/introspect` — operator-ness
+    /// is never a token claim. The token is typically the operator's chirp
+    /// machine token (minted by the caller's confidential client); the
+    /// acting user is still named per call via the `x-user-id` header.
+    ///
+    /// Unlike `AppCredential`, this carries no `x-granite-app-id`: it is not an
+    /// attested-app principal but a chirp-identity principal whose authority is
+    /// resolved server-side. Distinct from Granite's inbound `MachineAuth`
+    /// verify path (which is explicitly non-operator) — this asserts the
+    /// caller's identity to Granite, it does not verify someone else's.
+    ChirpBearer(String),
 }
 
 /// A typed async client for the Granite approval core.
@@ -73,6 +88,7 @@ impl GraniteClient {
         let (token, app_id) = match &self.auth {
             Auth::InternalServiceToken(token) => (token.as_str(), None),
             Auth::AppCredential { secret, app_id } => (secret.as_str(), Some(app_id.as_str())),
+            Auth::ChirpBearer(token) => (token.as_str(), None),
         };
         let mut b = builder
             .bearer_auth(token)
@@ -370,5 +386,53 @@ mod tests {
             decision_from_request(request_with_status("denied")).expect("denied is terminal");
         assert!(!decision.is_approved());
         assert_eq!(decision.reason(), Some("those files are still needed"));
+    }
+
+    // Build the outbound request for a given Auth and read back the headers it
+    // stamped. Exercises the single `authed` header-policy seam without a server.
+    fn built_headers(auth: Auth, acting: &ActingUser) -> reqwest::header::HeaderMap {
+        let client = GraniteClient::new("https://granite.example", auth);
+        let builder = client.authed(
+            client.http.post(client.url("/v1/grants/verify")),
+            acting,
+        );
+        builder
+            .build()
+            .expect("request should build")
+            .headers()
+            .clone()
+    }
+
+    #[test]
+    fn chirp_bearer_sends_bearer_and_user_id_but_no_app_id() {
+        let headers = built_headers(
+            Auth::ChirpBearer("chirp-machine-token".to_owned()),
+            &ActingUser::writer("operator-uid"),
+        );
+        assert_eq!(
+            headers.get(reqwest::header::AUTHORIZATION).unwrap(),
+            "Bearer chirp-machine-token"
+        );
+        assert_eq!(headers.get(headers::USER_ID).unwrap(), "operator-uid");
+        assert_eq!(headers.get(headers::USER_CAN_WRITE).unwrap(), "true");
+        // A chirp-identity principal is not an attested app: no app-id header.
+        assert!(headers.get(headers::GRANITE_APP_ID).is_none());
+    }
+
+    #[test]
+    fn app_credential_still_sends_app_id() {
+        let headers = built_headers(
+            Auth::AppCredential {
+                secret: "gas_secret".to_owned(),
+                app_id: "drive".to_owned(),
+            },
+            &ActingUser::read_only("owner-uid"),
+        );
+        assert_eq!(
+            headers.get(reqwest::header::AUTHORIZATION).unwrap(),
+            "Bearer gas_secret"
+        );
+        assert_eq!(headers.get(headers::GRANITE_APP_ID).unwrap(), "drive");
+        assert_eq!(headers.get(headers::USER_CAN_WRITE).unwrap(), "false");
     }
 }

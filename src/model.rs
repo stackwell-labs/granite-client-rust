@@ -140,7 +140,15 @@ pub struct CreateApprovalRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ApprovalRequest {
     pub id: Uuid,
-    pub owner_uid: String,
+    /// Owner of the request. `null`/absent for an app-filed request that no
+    /// human has claimed yet — the app's user label then rides in
+    /// `requester_user_ref` until a human consent session binds ownership.
+    #[serde(default)]
+    pub owner_uid: Option<String>,
+    /// Non-authoritative user label supplied by an app-filed request, before a
+    /// human claims (and thereby binds) it.
+    #[serde(default)]
+    pub requester_user_ref: Option<String>,
     pub requester_app_id: String,
     #[serde(default)]
     pub requester_agent_id: Option<String>,
@@ -319,4 +327,29 @@ pub struct GrantVerification {
     pub grant: Option<ApprovalGrant>,
     #[serde(default)]
     pub reason: Option<String>,
+}
+
+#[cfg(test)]
+mod unbound_request_decode_tests {
+    use super::*;
+
+    // Regression: an app-filed (unbound) approval request serializes owner_uid as
+    // `null`; the client must decode it (this was a hard 500 when owner_uid was a
+    // required String — surfaced by live-exercising Erase-Me + Scout).
+    #[test]
+    fn app_filed_request_with_null_owner_uid_decodes() {
+        let j = r#"{
+          "id":"00000000-0000-0000-0000-000000000001",
+          "owner_uid":null,
+          "requester_user_ref":"alice",
+          "requester_app_id":"drive",
+          "title":"Erase","summary":"erase owner data",
+          "requested_action":"erase","requested_resource":"owner/alice",
+          "status":"pending"
+        }"#;
+        let r: ApprovalRequest =
+            serde_json::from_str(j).expect("null owner_uid must decode for an app-filed request");
+        assert!(r.owner_uid.is_none());
+        assert_eq!(r.requester_user_ref.as_deref(), Some("alice"));
+    }
 }

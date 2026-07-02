@@ -104,8 +104,6 @@ pub struct CreateApprovalRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requester_app_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub requester_agent_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub requester_chirp_sub: Option<String>,
     pub request_type: ApprovalRequestType,
     pub title: String,
@@ -150,8 +148,6 @@ pub struct ApprovalRequest {
     #[serde(default)]
     pub requester_user_ref: Option<String>,
     pub requester_app_id: String,
-    #[serde(default)]
-    pub requester_agent_id: Option<String>,
     #[serde(default)]
     pub requester_chirp_sub: Option<String>,
     #[serde(default)]
@@ -216,8 +212,6 @@ pub struct ApprovalGrant {
     pub request_id: Uuid,
     pub subject_app_id: String,
     #[serde(default)]
-    pub subject_agent_id: Option<String>,
-    #[serde(default)]
     pub subject_chirp_sub: Option<String>,
     pub service_id: String,
     pub resource: String,
@@ -269,8 +263,6 @@ pub struct VerifyGrantRequest {
     pub resource: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub scopes: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub subject_agent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_chirp_sub: Option<String>,
 }

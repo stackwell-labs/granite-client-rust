@@ -50,8 +50,8 @@ pub struct DestructiveIntent {
     pub kind: PurgeKind,
     /// Optional human-readable reason shown on the consent page.
     pub reason: Option<String>,
-    /// Optional id of the agent that requested the purge.
-    pub agent_id: Option<String>,
+    /// Optional ChirpAuth sub (`agent_…`) of the agent that requested the purge.
+    pub agent_sub: Option<String>,
 }
 
 impl DestructiveIntent {
@@ -67,7 +67,7 @@ impl DestructiveIntent {
             target: target.into(),
             kind: PurgeKind::Row { rid },
             reason: None,
-            agent_id: None,
+            agent_sub: None,
         }
     }
 
@@ -79,7 +79,7 @@ impl DestructiveIntent {
             target: target.into(),
             kind: PurgeKind::Table,
             reason: None,
-            agent_id: None,
+            agent_sub: None,
         }
     }
 
@@ -90,10 +90,10 @@ impl DestructiveIntent {
         self
     }
 
-    /// Attach the requesting agent's id.
+    /// Attach the requesting agent's ChirpAuth sub (`agent_…`).
     #[must_use]
-    pub fn with_agent_id(mut self, agent_id: impl Into<String>) -> Self {
-        self.agent_id = Some(agent_id.into());
+    pub fn with_agent_sub(mut self, agent_sub: impl Into<String>) -> Self {
+        self.agent_sub = Some(agent_sub.into());
         self
     }
 
@@ -132,7 +132,7 @@ impl DestructiveIntent {
             .unwrap_or_else(|| "Permanent removal requested by an agent.".to_owned());
         CreateApprovalRequest {
             requester_app_id: None,
-            requester_agent_id: self.agent_id.clone(),
+            requester_chirp_sub: self.agent_sub.clone(),
             request_type: ApprovalRequestType::OneTimeAction,
             title: self.title(),
             summary,

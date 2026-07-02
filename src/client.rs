@@ -97,9 +97,6 @@ impl GraniteClient {
         if let Some(app_id) = app_id {
             b = b.header(headers::GRANITE_APP_ID, app_id);
         }
-        if let Some(agent_id) = &acting_user.agent_id {
-            b = b.header(headers::AGENT_ID, agent_id);
-        }
         b
     }
 
@@ -304,27 +301,24 @@ fn decision_from_request(request: ApprovalRequest) -> Option<Decision> {
     }
 }
 
-/// The user a request acts on behalf of, plus their write flag and optional
-/// acting agent id. Passed per call rather than baked into the client.
+/// The user a request acts on behalf of, plus their write flag. Passed per call
+/// rather than baked into the client.
 #[derive(Debug, Clone)]
 pub struct ActingUser {
     /// The owner uid (`x-user-id`).
     pub uid: String,
     /// Whether the user may write (`x-user-can-write`).
     pub can_write: bool,
-    /// Optional Loom agent id (`x-agent-id`).
-    pub agent_id: Option<String>,
 }
 
 impl ActingUser {
-    /// A read-only acting user (`can_write = false`, no agent id). The right
-    /// default for verification calls.
+    /// A read-only acting user (`can_write = false`). The right default for
+    /// verification calls.
     #[must_use]
     pub fn read_only(uid: impl Into<String>) -> Self {
         Self {
             uid: uid.into(),
             can_write: false,
-            agent_id: None,
         }
     }
 
@@ -335,15 +329,7 @@ impl ActingUser {
         Self {
             uid: uid.into(),
             can_write: true,
-            agent_id: None,
         }
-    }
-
-    /// Attach a Loom agent id.
-    #[must_use]
-    pub fn with_agent_id(mut self, agent_id: impl Into<String>) -> Self {
-        self.agent_id = Some(agent_id.into());
-        self
     }
 }
 

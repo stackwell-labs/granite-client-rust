@@ -168,7 +168,7 @@ mod tests {
     fn row_purge_carries_its_rid_inside_the_variant() {
         let intent = DestructiveIntent::row("amber", "ledger", 42)
             .with_reason("agent cleanup")
-            .with_agent_id("agent-1");
+            .with_agent_sub("agent_1");
         assert_eq!(intent.kind, PurgeKind::Row { rid: 42 });
         assert_eq!(intent.resource_ref(), "amber:row:ledger#42");
         assert_eq!(intent.kind.action(), "purge_row");
@@ -178,7 +178,8 @@ mod tests {
         assert_eq!(req.risk_level, ApprovalRiskLevel::High);
         assert_eq!(req.requested_action, "purge_row");
         assert_eq!(req.requested_resource, "amber:row:ledger#42");
-        assert_eq!(req.requester_agent_id.as_deref(), Some("agent-1"));
+        // The requesting agent is a ChirpMachine, carried as requester_chirp_sub.
+        assert_eq!(req.requester_chirp_sub.as_deref(), Some("agent_1"));
         assert_eq!(req.summary, "agent cleanup");
         // App-credentialled callers let Granite bind the app id.
         assert!(req.requester_app_id.is_none());
@@ -219,7 +220,6 @@ mod tests {
         assert_eq!(headers::USER_ID, "x-user-id");
         assert_eq!(headers::USER_CAN_WRITE, "x-user-can-write");
         assert_eq!(headers::GRANITE_APP_ID, "x-granite-app-id");
-        assert_eq!(headers::AGENT_ID, "x-agent-id");
         assert_eq!(headers::can_write_value(true), "true");
         assert_eq!(headers::can_write_value(false), "false");
     }

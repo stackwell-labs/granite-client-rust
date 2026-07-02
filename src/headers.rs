@@ -22,10 +22,6 @@ pub const USER_CAN_WRITE: &str = "x-user-can-write";
 /// attested value rather than trusting the request body.
 pub const GRANITE_APP_ID: &str = "x-granite-app-id";
 
-/// The Drive-resource id of the agent acting under a Loom-hosted grant.
-/// Carried so verification can match a grant's stored `subject_agent_id`.
-pub const AGENT_ID: &str = "x-agent-id";
-
 /// The canonical `"true"` / `"false"` rendering of the write flag, so
 /// callers never hand-spell the boolean.
 #[must_use]

@@ -1,6 +1,6 @@
 [package]
 name = "granite-client"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 description = "Typed async client for the Granite approval core. One source of truth for the wire contract, header policy, and destructive-intent taxonomy."
 license = "MIT OR Apache-2.0"
@@ -19,6 +19,7 @@ categories = ["api-bindings", "authentication"]
 # is not used here). Bumped to granite-client v0.4.0 to track the capability major.
 capability = { git = "https://github.com/stackwell-labs/capability.git", tag = "v0.4.0" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
@@ -28,4 +29,5 @@ uuid = { version = "1", features = ["serde"] }
 tokio = { version = "1", default-features = false, features = ["time"] }
 
 [dev-dependencies]
+warden-verify = { git = "https://github.com/stackwell-labs/warden-verify.git", tag = "v0.2.0" }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

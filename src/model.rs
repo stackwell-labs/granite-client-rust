@@ -228,6 +228,38 @@ pub struct ApprovalGrant {
     /// `Test` grant can never authorize a `Prod` one.
     #[serde(default = "environment_prod_default")]
     pub environment: Environment,
+    /// The human-Warden WebAuthn assertion Granite verified over this grant's
+    /// terms before minting. Present only for Warden-gated grants (fail-closed
+    /// enforcing services like Drive require it). Use
+    /// [`ApprovalGrant::warden_assertion_header`] for the ready-to-send
+    /// `x-granite-warden-assertion` header value.
+    #[serde(default)]
+    pub warden_assertion: Option<WardenAssertionWire>,
+}
+
+/// A Warden WebAuthn assertion on a grant, in the canonical `warden_verify` wire
+/// shape (four base64url fields). Mirrored here — this crate only CARRIES the
+/// assertion to the enforcing service, not verifies it; the shape is the stable
+/// header contract. Field order matches `warden_verify::wire::WireAssertion`, so
+/// re-serialization is byte-identical to that crate's `encode`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WardenAssertionWire {
+    pub credential_id: String,
+    pub authenticator_data_b64: String,
+    pub client_data_json_b64: String,
+    pub signature_b64: String,
+}
+
+impl ApprovalGrant {
+    /// The `x-granite-warden-assertion` header value the enforcing service (Drive)
+    /// requires on the Granite-grant path: base64url-no-pad of the wire
+    /// assertion's JSON, byte-compatible with `warden_verify::wire::encode`.
+    /// `None` when the grant carries no assertion.
+    pub fn warden_assertion_header(&self) -> Option<String> {
+        use base64::Engine;
+        let bytes = serde_json::to_vec(self.warden_assertion.as_ref()?).ok()?;
+        Some(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+    }
 }
 
 impl ApprovalGrant {
@@ -343,5 +375,51 @@ mod unbound_request_decode_tests {
             serde_json::from_str(j).expect("null owner_uid must decode for an app-filed request");
         assert!(r.owner_uid.is_none());
         assert_eq!(r.requester_user_ref.as_deref(), Some("alice"));
+    }
+}
+
+#[cfg(test)]
+mod warden_header_tests {
+    use super::*;
+
+    fn grant_with(assertion: Option<WardenAssertionWire>) -> ApprovalGrant {
+        ApprovalGrant {
+            id: Uuid::nil(),
+            owner_uid: "alice".into(),
+            request_id: Uuid::nil(),
+            subject_app_id: "jot".into(),
+            subject_chirp_sub: None,
+            service_id: "drive".into(),
+            resource: "drive:files".into(),
+            scopes: vec![],
+            limits: None,
+            status: ApprovalGrantStatus::Active,
+            environment: environment_prod_default(),
+            warden_assertion: assertion,
+        }
+    }
+
+    #[test]
+    fn no_assertion_yields_no_header() {
+        assert!(grant_with(None).warden_assertion_header().is_none());
+    }
+
+    /// The header this crate produces MUST decode via `warden_verify::wire` — the
+    /// exact path the enforcing service (Drive) uses — or a cross-service byte
+    /// mismatch would silently 403 every grant redemption.
+    #[test]
+    fn header_decodes_via_warden_verify_wire() {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let wire = WardenAssertionWire {
+            credential_id: "cred-1".into(),
+            authenticator_data_b64: b64.encode(b"authenticator-data"),
+            client_data_json_b64: b64.encode(br#"{"type":"webauthn.get"}"#),
+            signature_b64: b64.encode(b"signature-bytes"),
+        };
+        let header = grant_with(Some(wire)).warden_assertion_header().expect("header");
+        let decoded = warden_verify::wire::decode(&header)
+            .expect("warden_verify::wire::decode must accept granite-client's header");
+        assert_eq!(decoded.credential_id, "cred-1");
     }
 }

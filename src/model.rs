@@ -125,6 +125,11 @@ pub struct CreateApprovalRequest {
     /// Granite offers as "Review in <app> →" (fabric-and-authority opt-in).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail_url: Option<String>,
+    /// Optional https URL Granite redirects the browser back to after a
+    /// successful approve (with `?request_id=<id>` appended), so the requesting
+    /// app resumes automatically. Validated https by Granite at creation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_url: Option<String>,
     /// Optional structured detail (e.g. the concrete files affected) Granite
     /// renders in its generic consent view without the requester hosting a UI.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -111,6 +111,11 @@ pub struct CreateApprovalRequest {
     pub risk_level: ApprovalRiskLevel,
     pub requested_action: String,
     pub requested_resource: String,
+    /// Additional resources this ONE grant should cover, beyond `requested_resource`
+    /// — e.g. an app's private area PLUS a shared area, granted in a single consent.
+    /// Empty ⇒ the grant covers only `requested_resource` (back-compat).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requested_resources: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub requested_scopes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -163,6 +168,10 @@ pub struct ApprovalRequest {
     pub risk_level: ApprovalRiskLevel,
     pub requested_action: String,
     pub requested_resource: String,
+    /// Additional resources this request covers (multi-resource grants). Empty ⇒
+    /// only `requested_resource`.
+    #[serde(default)]
+    pub requested_resources: Vec<String>,
     #[serde(default)]
     pub requested_scopes: Vec<String>,
     pub status: ApprovalRequestStatus,
@@ -220,6 +229,10 @@ pub struct ApprovalGrant {
     pub subject_chirp_sub: Option<String>,
     pub service_id: String,
     pub resource: String,
+    /// Every resource this grant covers. Empty ⇒ just `[resource]` (a grant from a
+    /// single-resource Granite). Use [`ApprovalGrant::covered_resources`].
+    #[serde(default)]
+    pub resources: Vec<String>,
     #[serde(default)]
     pub scopes: Vec<String>,
     #[serde(default)]
@@ -268,6 +281,17 @@ impl ApprovalGrant {
 }
 
 impl ApprovalGrant {
+    /// Every resource this grant covers: `resources` when non-empty, else the
+    /// single `[resource]` (back-compat for grants minted before multi-resource).
+    #[must_use]
+    pub fn covered_resources(&self) -> Vec<&str> {
+        if self.resources.is_empty() {
+            vec![self.resource.as_str()]
+        } else {
+            self.resources.iter().map(String::as_str).collect()
+        }
+    }
+
     /// Isolation guard — call this before acting on the grant for any
     /// irreversible operation. Confirms the grant was minted in the same trust
     /// environment the caller is running in; a `Test` grant must never authorize

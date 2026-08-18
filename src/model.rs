@@ -326,6 +326,11 @@ pub struct VerifyGrantRequest {
     pub scopes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_chirp_sub: Option<String>,
+    /// The actor named as an APP identity, for an enforcer whose caller has no
+    /// ChirpAuth machine sub to offer. Granite treats naming an actor other
+    /// than yourself as a registered privilege; naming yourself is free.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_app_id: Option<String>,
 }
 
 impl VerifyGrantRequest {
@@ -365,6 +370,14 @@ impl VerifyGrantRequest {
     #[must_use]
     pub fn with_subject_chirp_sub(mut self, sub: impl Into<String>) -> Self {
         self.subject_chirp_sub = Some(sub.into());
+        self
+    }
+
+    /// Require the grant to be bound to this APP subject — the form to use when
+    /// the actor you authenticated is an app rather than a machine principal.
+    #[must_use]
+    pub fn with_subject_app_id(mut self, app_id: impl Into<String>) -> Self {
+        self.subject_app_id = Some(app_id.into());
         self
     }
 }
@@ -420,6 +433,7 @@ mod warden_header_tests {
             subject_chirp_sub: None,
             service_id: "drive".into(),
             resource: "drive:files".into(),
+            resources: vec![],
             scopes: vec![],
             limits: None,
             status: ApprovalGrantStatus::Active,

@@ -139,6 +139,24 @@ impl GraniteClient {
         self.send_json(builder).await
     }
 
+    /// `POST /v1/approval-requests/{id}/withdraw`: retract a request this
+    /// caller filed, while it is still pending. Only the app credential or
+    /// machine client that filed it may; anyone else gets the same 404 as a
+    /// missing request, and a decided request is a 409. A withdrawal is not a
+    /// decision, so it records nothing on the owner's decision log.
+    pub async fn withdraw_approval_request(
+        &self,
+        acting_user: &ActingUser,
+        request_id: Uuid,
+    ) -> Result<ApprovalRequest, GraniteError> {
+        let builder = self.authed(
+            self.http
+                .post(self.url(&format!("/v1/approval-requests/{request_id}/withdraw"))),
+            acting_user,
+        );
+        self.send_json(builder).await
+    }
+
     /// `POST /v1/grants/verify`: verify a grant is active and in scope.
     pub async fn verify_grant(
         &self,
@@ -241,20 +259,26 @@ impl GraniteClient {
 /// The terminal outcome of an approval request, for callers driving the
 /// request → decide → react loop. Carries the full request so a caller can read
 /// `grant_id` (to verify/redeem the resulting grant) or the denial reason.
+/// `Withdrawn` is terminal without being anyone's decision: the requester
+/// retracted it, so an await on it must end rather than poll forever.
 #[derive(Debug, Clone)]
 pub enum Decision {
     /// The owner approved the request.
     Approved(ApprovalRequest),
     /// The owner denied it; see [`Decision::reason`].
     Denied(ApprovalRequest),
+    /// The requester withdrew it before anyone decided.
+    Withdrawn(ApprovalRequest),
 }
 
 impl Decision {
-    /// The underlying request record (approved or denied).
+    /// The underlying request record.
     #[must_use]
     pub fn request(&self) -> &ApprovalRequest {
         match self {
-            Decision::Approved(request) | Decision::Denied(request) => request,
+            Decision::Approved(request)
+            | Decision::Denied(request)
+            | Decision::Withdrawn(request) => request,
         }
     }
 
@@ -298,6 +322,7 @@ fn decision_from_request(request: ApprovalRequest) -> Option<Decision> {
         ApprovalRequestStatus::Pending => None,
         ApprovalRequestStatus::Approved => Some(Decision::Approved(request)),
         ApprovalRequestStatus::Denied => Some(Decision::Denied(request)),
+        ApprovalRequestStatus::Withdrawn => Some(Decision::Withdrawn(request)),
     }
 }
 
@@ -372,6 +397,14 @@ mod tests {
             decision_from_request(request_with_status("denied")).expect("denied is terminal");
         assert!(!decision.is_approved());
         assert_eq!(decision.reason(), Some("those files are still needed"));
+    }
+
+    #[test]
+    fn withdrawn_is_terminal_and_not_approved() {
+        let decision = decision_from_request(request_with_status("withdrawn"))
+            .expect("withdrawn is terminal, so an await on it ends");
+        assert!(matches!(decision, Decision::Withdrawn(_)));
+        assert!(!decision.is_approved());
     }
 
     // Build the outbound request for a given Auth and read back the headers it

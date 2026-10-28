@@ -51,6 +51,7 @@ mod tests {
             ("\"pending\"", ApprovalRequestStatus::Pending),
             ("\"approved\"", ApprovalRequestStatus::Approved),
             ("\"denied\"", ApprovalRequestStatus::Denied),
+            ("\"withdrawn\"", ApprovalRequestStatus::Withdrawn),
         ] {
             let got: ApprovalRequestStatus = serde_json::from_str(s).unwrap();
             assert_eq!(got, want);

@@ -59,13 +59,16 @@ pub enum ApprovalRequestStatus {
     Approved,
     /// The user denied it.
     Denied,
+    /// The requester withdrew it while it was still pending. Not a decision:
+    /// no one approved or denied it, and it can no longer be decided.
+    Withdrawn,
 }
 
 impl ApprovalRequestStatus {
     /// Whether the request has reached a terminal (decided) state.
     #[must_use]
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Approved | Self::Denied)
+        matches!(self, Self::Approved | Self::Denied | Self::Withdrawn)
     }
 }
 

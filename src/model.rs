@@ -240,6 +240,13 @@ pub struct ApprovalGrant {
     pub scopes: Vec<String>,
     #[serde(default)]
     pub limits: Option<Value>,
+    /// When the grant stops authorizing anything; `None` means it never
+    /// expires. Warden signs this into the grant's terms (warden-verify v0.5.0,
+    /// `warden-grant-terms/2`), so an enforcing service that rebuilds those
+    /// terms needs it to re-verify `warden_assertion`. Granite always sends the
+    /// key (`null` when unset); `default` reads a grant from an older Granite.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub expires_at: Option<time::OffsetDateTime>,
     pub status: ApprovalGrantStatus,
     /// The trust environment Granite minted this grant in — `Prod` or
     /// `Test { tenant }`. Derived by Granite from the caller's keyset/token, NOT
@@ -439,6 +446,7 @@ mod warden_header_tests {
             resources: vec![],
             scopes: vec![],
             limits: None,
+            expires_at: None,
             status: ApprovalGrantStatus::Active,
             environment: environment_prod_default(),
             warden_assertion: assertion,
@@ -467,5 +475,42 @@ mod warden_header_tests {
         let decoded = warden_verify::wire::decode(&header)
             .expect("warden_verify::wire::decode must accept granite-client's header");
         assert_eq!(decoded.credential_id, "cred-1");
+    }
+}
+
+#[cfg(test)]
+mod grant_expiry_decode_tests {
+    use super::*;
+
+    // Both bodies are Granite's own `serde_json::to_string(&ApprovalGrant)`
+    // output (granite `backend/src/model.rs`), copied verbatim: Granite always
+    // writes the `expires_at` key, as an RFC 3339 string or `null`.
+    const WITH_EXPIRY: &str = r#"{"id":"f36a7a65-095d-4598-877b-cf161a75190b","owner_uid":"owner1","request_id":"98fd1975-86bf-425b-a4d4-e8c755aecf33","subject_app_id":"jot","service_id":"capability_gateway","resource":"capability:web_search","scopes":[],"expires_at":"2026-11-06T21:20:00Z","status":"active","environment":"Prod","created_at":"2026-11-05T17:33:20Z","revoked_at":null}"#;
+    const NO_EXPIRY: &str = r#"{"id":"f36a7a65-095d-4598-877b-cf161a75190b","owner_uid":"owner1","request_id":"98fd1975-86bf-425b-a4d4-e8c755aecf33","subject_app_id":"jot","service_id":"capability_gateway","resource":"capability:web_search","scopes":[],"expires_at":null,"status":"active","environment":"Prod","created_at":"2026-11-05T17:33:20Z","revoked_at":null}"#;
+
+    // Regression (granite#32): the client dropped `expires_at`, so Drive could
+    // not rebuild the Warden grant terms of an expiring grant and 403'd it.
+    #[test]
+    fn granite_grant_expiry_is_kept() {
+        let g: ApprovalGrant = serde_json::from_str(WITH_EXPIRY).expect("decode");
+        assert_eq!(
+            g.expires_at.map(time::OffsetDateTime::unix_timestamp),
+            Some(1_794_000_000)
+        );
+    }
+
+    #[test]
+    fn granite_grant_with_null_expiry_decodes_as_none() {
+        let g: ApprovalGrant = serde_json::from_str(NO_EXPIRY).expect("decode");
+        assert_eq!(g.expires_at, None);
+    }
+
+    /// A grant from a Granite that predates the field has no key at all.
+    #[test]
+    fn grant_without_expiry_key_decodes_as_none() {
+        let mut v: Value = serde_json::from_str(NO_EXPIRY).unwrap();
+        v.as_object_mut().unwrap().remove("expires_at");
+        let g: ApprovalGrant = serde_json::from_value(v).expect("decode");
+        assert_eq!(g.expires_at, None);
     }
 }

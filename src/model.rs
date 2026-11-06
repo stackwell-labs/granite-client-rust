@@ -123,6 +123,15 @@ pub struct CreateApprovalRequest {
     pub requested_scopes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proposed_limits: Option<Value>,
+    /// When the request stops being decidable: Granite refuses an approve,
+    /// deny or claim after it. `None` (omitted from the body) leaves Granite's
+    /// default window, 7 days from creation. Granite also copies it onto the
+    /// grant an approve mints, so it bounds that grant's life too.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "time::serde::rfc3339::option"
+    )]
+    pub expires_at: Option<time::OffsetDateTime>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -512,5 +521,38 @@ mod grant_expiry_decode_tests {
         v.as_object_mut().unwrap().remove("expires_at");
         let g: ApprovalGrant = serde_json::from_value(v).expect("decode");
         assert_eq!(g.expires_at, None);
+    }
+}
+
+#[cfg(test)]
+mod create_request_expiry_tests {
+    use super::*;
+
+    fn request(expires_at: Option<time::OffsetDateTime>) -> CreateApprovalRequest {
+        CreateApprovalRequest {
+            title: "t".into(),
+            summary: "s".into(),
+            requested_action: "a".into(),
+            requested_resource: "r".into(),
+            expires_at,
+            ..Default::default()
+        }
+    }
+
+    // granite#43: a requester bounds how long its ask is decidable. Granite
+    // reads the key with `time::serde::rfc3339::option`, so it must be an
+    // RFC 3339 string.
+    #[test]
+    fn expires_at_is_sent_as_rfc3339() {
+        let at = time::OffsetDateTime::from_unix_timestamp(1_794_000_000).unwrap();
+        let v = serde_json::to_value(request(Some(at))).unwrap();
+        assert_eq!(v["expires_at"], "2026-11-06T21:20:00Z");
+    }
+
+    /// No key at all, so Granite applies its default decision window.
+    #[test]
+    fn expires_at_is_omitted_when_none() {
+        let v = serde_json::to_value(request(None)).unwrap();
+        assert!(v.as_object().unwrap().get("expires_at").is_none());
     }
 }

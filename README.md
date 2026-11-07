@@ -13,8 +13,8 @@ destructive-intent taxonomy. It replaces three divergent hand-rolled clients
 - **A strict status enum** — `ApprovalRequestStatus` has no default and no
   catch-all. An unknown status string is a **loud decode error**, never a
   silent "pending" (the bug the hand-rolled clients carried via `_ => Pending`).
-- **Header policy** (`headers`): `x-user-id`, `x-user-can-write`,
-  `x-granite-app-id`, `x-agent-id`, spelled once.
+- **Header policy** (`headers`): `x-user-id` and `x-granite-app-id`,
+  spelled once.
 - **Destructive-intent taxonomy** (`intent`): `PurgeKind::Row { rid }` /
   `PurgeKind::Table` carries its payload in the variant, so a table purge
   cannot carry a row id and a row purge cannot omit one. `DestructiveIntent::to_approval_request`
@@ -23,8 +23,8 @@ destructive-intent taxonomy. It replaces three divergent hand-rolled clients
   - `POST /v1/approval-requests`
   - `GET /v1/approval-requests/{id}`
   - `POST /v1/grants/verify`
+  - `POST /v1/approval-requests/{id}/withdraw`
   - `POST /v1/grants/{id}/revoke`
-  - `POST /v1/projects/{project_id}/grants/verify`
 
 ## Endpoints it does NOT invent
 
@@ -46,13 +46,13 @@ let client = GraniteClient::new(
 // File a high-risk purge for a human to approve.
 let intent = DestructiveIntent::table("amber", "ledger").with_reason("agent cleanup");
 let req = client
-    .create_approval_request(&ActingUser::writer("alice"), &intent.to_approval_request())
+    .create_approval_request(&ActingUser::new("alice"), &intent.to_approval_request())
     .await?;
 
 // Later: verify a standing grant before acting on it.
 let v = client
     .verify_grant(
-        &ActingUser::read_only("alice"),
+        &ActingUser::new("alice"),
         &VerifyGrantRequest::for_grant(some_grant_id).with_scopes(["drive.read".into()]),
     )
     .await?;
@@ -68,8 +68,8 @@ assert!(v.approved);
 - `Auth::AppCredential { secret, app_id }` — sends `x-granite-app-id`; Granite
   binds `requester_app_id` to the attested app, so leave it `None`.
 
-The acting user (`x-user-id` + `x-user-can-write`, optional `x-agent-id`) is
-passed per call via `ActingUser`, since one service acts for many users.
+The acting user (`x-user-id`) is passed per call via `ActingUser::new(uid)`,
+since one service acts for many users.
 
 ## License
 

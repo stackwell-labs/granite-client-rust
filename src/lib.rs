@@ -6,15 +6,15 @@
 //!
 //! - **the wire contract** ([`model`]) — the create/verify/status request and
 //!   response bodies, matching what Granite actually serves;
-//! - **the header policy** ([`headers`]) — `x-user-id`, `x-user-can-write`,
-//!   `x-granite-app-id`, `x-agent-id`, spelled once;
+//! - **the header policy** ([`headers`]) — `x-user-id` and `x-granite-app-id`,
+//!   spelled once;
 //! - **the destructive-intent taxonomy** ([`intent`]) — `PurgeKind` /
 //!   `DestructiveIntent`, replacing the stringly-typed `"row"`/`"table"`
 //!   pair, plus the single intent→approval-request mapping;
 //! - **a typed async client** ([`client`]) over the real Granite endpoints:
 //!   `POST /v1/grants/verify`, `POST /v1/grants/{id}/revoke`,
 //!   `POST /v1/approval-requests`, `GET /v1/approval-requests/{id}`, and
-//!   `POST /v1/projects/{project_id}/grants/verify`.
+//!   `POST /v1/approval-requests/{id}/withdraw`.
 //!
 //! Notably, [`model::ApprovalRequestStatus`] deserializes strictly: an
 //! unknown status is a loud decode error, never a silent "pending".
@@ -219,9 +219,6 @@ mod tests {
     #[test]
     fn header_constants_match_granite_policy() {
         assert_eq!(headers::USER_ID, "x-user-id");
-        assert_eq!(headers::USER_CAN_WRITE, "x-user-can-write");
         assert_eq!(headers::GRANITE_APP_ID, "x-granite-app-id");
-        assert_eq!(headers::can_write_value(true), "true");
-        assert_eq!(headers::can_write_value(false), "false");
     }
 }

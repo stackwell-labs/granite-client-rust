@@ -329,7 +329,7 @@ impl ApprovalGrant {
     }
 }
 
-/// Body for `POST /v1/grants/verify` (and the project-scoped variant).
+/// Body for `POST /v1/grants/verify`.
 ///
 /// At least one of `request_id` / `grant_id` is supplied to name the grant;
 /// `resource` and `scopes` narrow what is being checked.

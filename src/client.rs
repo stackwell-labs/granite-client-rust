@@ -92,8 +92,7 @@ impl GraniteClient {
         };
         let mut b = builder
             .bearer_auth(token)
-            .header(headers::USER_ID, &acting_user.uid)
-            .header(headers::USER_CAN_WRITE, headers::can_write_value(acting_user.can_write));
+            .header(headers::USER_ID, &acting_user.uid);
         if let Some(app_id) = app_id {
             b = b.header(headers::GRANITE_APP_ID, app_id);
         }
@@ -165,24 +164,6 @@ impl GraniteClient {
     ) -> Result<GrantVerification, GraniteError> {
         let builder = self
             .authed(self.http.post(self.url("/v1/grants/verify")), acting_user)
-            .json(request);
-        self.send_json(builder).await
-    }
-
-    /// `POST /v1/projects/{project_id}/grants/verify`: project-scoped verify.
-    /// Operator-only at Granite; the acting user names the owner via headers.
-    pub async fn verify_project_grant(
-        &self,
-        acting_user: &ActingUser,
-        project_id: Uuid,
-        request: &VerifyGrantRequest,
-    ) -> Result<GrantVerification, GraniteError> {
-        let builder = self
-            .authed(
-                self.http
-                    .post(self.url(&format!("/v1/projects/{project_id}/grants/verify"))),
-                acting_user,
-            )
             .json(request);
         self.send_json(builder).await
     }
@@ -326,35 +307,19 @@ fn decision_from_request(request: ApprovalRequest) -> Option<Decision> {
     }
 }
 
-/// The user a request acts on behalf of, plus their write flag. Passed per call
-/// rather than baked into the client.
+/// The user a request acts on behalf of. Passed per call rather than baked
+/// into the client.
 #[derive(Debug, Clone)]
 pub struct ActingUser {
     /// The owner uid (`x-user-id`).
     pub uid: String,
-    /// Whether the user may write (`x-user-can-write`).
-    pub can_write: bool,
 }
 
 impl ActingUser {
-    /// A read-only acting user (`can_write = false`). The right default for
-    /// verification calls.
+    /// Act on behalf of `uid`.
     #[must_use]
-    pub fn read_only(uid: impl Into<String>) -> Self {
-        Self {
-            uid: uid.into(),
-            can_write: false,
-        }
-    }
-
-    /// A writing acting user (`can_write = true`). Required for create /
-    /// approve / deny / revoke.
-    #[must_use]
-    pub fn writer(uid: impl Into<String>) -> Self {
-        Self {
-            uid: uid.into(),
-            can_write: true,
-        }
+    pub fn new(uid: impl Into<String>) -> Self {
+        Self { uid: uid.into() }
     }
 }
 
@@ -426,14 +391,13 @@ mod tests {
     fn chirp_bearer_sends_bearer_and_user_id_but_no_app_id() {
         let headers = built_headers(
             Auth::ChirpBearer("chirp-machine-token".to_owned()),
-            &ActingUser::writer("operator-uid"),
+            &ActingUser::new("operator-uid"),
         );
         assert_eq!(
             headers.get(reqwest::header::AUTHORIZATION).unwrap(),
             "Bearer chirp-machine-token"
         );
         assert_eq!(headers.get(headers::USER_ID).unwrap(), "operator-uid");
-        assert_eq!(headers.get(headers::USER_CAN_WRITE).unwrap(), "true");
         // A chirp-identity principal is not an attested app: no app-id header.
         assert!(headers.get(headers::GRANITE_APP_ID).is_none());
     }
@@ -445,13 +409,13 @@ mod tests {
                 secret: "gas_secret".to_owned(),
                 app_id: "drive".to_owned(),
             },
-            &ActingUser::read_only("owner-uid"),
+            &ActingUser::new("owner-uid"),
         );
         assert_eq!(
             headers.get(reqwest::header::AUTHORIZATION).unwrap(),
             "Bearer gas_secret"
         );
         assert_eq!(headers.get(headers::GRANITE_APP_ID).unwrap(), "drive");
-        assert_eq!(headers.get(headers::USER_CAN_WRITE).unwrap(), "false");
+        assert_eq!(headers.get(headers::USER_ID).unwrap(), "owner-uid");
     }
 }

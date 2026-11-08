@@ -1,6 +1,6 @@
 [package]
 name = "granite-client"
-version = "0.15.0"
+version = "0.15.1"
 edition = "2021"
 description = "Typed async client for the Granite approval core. One source of truth for the wire contract, header policy, and destructive-intent taxonomy."
 license = "MIT OR Apache-2.0"
@@ -13,11 +13,12 @@ categories = ["api-bindings", "authentication"]
 # The shared trust-environment primitive (`Environment { Prod, Test{tenant} }`).
 # Reused — not re-declared — so Granite, this client, and capability all speak
 # ONE environment type, and a Test approval can't launder into Prod.
-# Pinned to the published capability v0.4.0 lattice tag. granite-client uses only
-# `Environment` (Prod / Test{tenant}), which is unchanged across the v0.3->v0.4
-# lattice bump, so this is a clean re-pin (the lattice's breaking verify/rights API
-# is not used here). Bumped to granite-client v0.4.0 to track the capability major.
-capability = { git = "https://github.com/stackwell-labs/capability.git", tag = "v0.4.0" }
+# Pinned to the published capability v0.5.0 tag. granite-client uses only
+# `Environment` (Prod / Test{tenant}), which is unchanged from v0.3 through v0.5
+# (v0.5.0 only seals `Rights` deserialization), so each bump is a clean re-pin.
+# A consumer must pin the SAME capability tag as this crate, or the two
+# `Environment`s are different types.
+capability = { git = "https://github.com/stackwell-labs/capability.git", tag = "v0.5.0" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

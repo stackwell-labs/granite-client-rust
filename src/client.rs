@@ -18,9 +18,6 @@ use crate::model::{
 /// hand-rolled clients).
 #[derive(Debug, Clone)]
 pub enum Auth {
-    /// The master internal-service-token (operator). The caller must supply
-    /// `requester_app_id` in the body of created requests.
-    InternalServiceToken(String),
     /// A registered app credential: the bearer secret plus the attested app
     /// id sent as `x-granite-app-id`. Granite binds `requester_app_id` to
     /// `app_id`, so created requests may omit it.
@@ -86,7 +83,6 @@ impl GraniteClient {
     /// single place the header policy is applied for outbound calls.
     fn authed(&self, builder: RequestBuilder, acting_user: &ActingUser) -> RequestBuilder {
         let (token, app_id) = match &self.auth {
-            Auth::InternalServiceToken(token) => (token.as_str(), None),
             Auth::AppCredential { secret, app_id } => (secret.as_str(), Some(app_id.as_str())),
             Auth::ChirpBearer(token) => (token.as_str(), None),
         };

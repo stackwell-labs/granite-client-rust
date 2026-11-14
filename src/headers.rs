@@ -7,9 +7,8 @@
 //! makes the spelling a single source of truth.
 
 /// The user the request acts on behalf of (the grant/approval owner uid).
-/// Required on every internal-service-token call; for an app-credentialled
-/// or end-user-bearer call it names the acting user when the caller speaks
-/// for a user other than the bearer.
+/// For an app-credentialled, machine or end-user-bearer call it names the
+/// acting user when the caller speaks for a user other than the bearer.
 pub const USER_ID: &str = "x-user-id";
 
 /// The registered app id a caller authenticates as, alongside its bearer

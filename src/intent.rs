@@ -122,8 +122,8 @@ impl DestructiveIntent {
     /// The single mapping from a destructive intent to a Granite
     /// approval-request body. A purge is always a high-risk
     /// `one_time_action` (it creates no standing grant). `requester_app_id`
-    /// is left `None` so an app-credentialled caller can let Granite bind
-    /// it; an internal-service-token caller sets it before sending.
+    /// is left `None` so an app-credentialled or machine caller can let
+    /// Granite bind it; a caller with no attested app sets it before sending.
     #[must_use]
     pub fn to_approval_request(&self) -> CreateApprovalRequest {
         let summary = self

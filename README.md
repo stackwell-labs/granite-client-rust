@@ -63,8 +63,9 @@ assert!(v.approved);
 
 ## Auth model
 
-- `Auth::InternalServiceToken(token)` — the operator path. Set
-  `CreateApprovalRequest::requester_app_id` yourself; it speaks for many apps.
+- `Auth::ChirpBearer(token)` — a chirp identity token as the bearer (a
+  machine token, or a person's). Granite binds `requester_app_id` for a
+  machine token's bound app or client id; a person's bearer sets it.
 - `Auth::AppCredential { secret, app_id }` — sends `x-granite-app-id`; Granite
   binds `requester_app_id` to the attested app, so leave it `None`.
 

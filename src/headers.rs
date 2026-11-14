@@ -2,16 +2,11 @@
 //!
 //! Granite's auth layer reads a fixed set of request headers. The three
 //! hand-rolled clients this crate replaces each re-spelled these string
-//! literals inline; a typo (`x-user_id`, `x-granite-app`) is a
+//! literals inline; a typo (`x-user_id`) is a
 //! silent auth failure, not a compile error. Owning the constants here
 //! makes the spelling a single source of truth.
 
 /// The user the request acts on behalf of (the grant/approval owner uid).
-/// For an app-credentialled, machine or end-user-bearer call it names the
-/// acting user when the caller speaks for a user other than the bearer.
+/// For a machine or end-user-bearer call it names the acting user when the
+/// caller speaks for a user other than the bearer.
 pub const USER_ID: &str = "x-user-id";
-
-/// The registered app id a caller authenticates as, alongside its bearer
-/// app secret. When present, Granite binds `requester_app_id` to this
-/// attested value rather than trusting the request body.
-pub const GRANITE_APP_ID: &str = "x-granite-app-id";

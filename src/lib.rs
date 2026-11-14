@@ -6,8 +6,7 @@
 //!
 //! - **the wire contract** ([`model`]) — the create/verify/status request and
 //!   response bodies, matching what Granite actually serves;
-//! - **the header policy** ([`headers`]) — `x-user-id` and `x-granite-app-id`,
-//!   spelled once;
+//! - **the header policy** ([`headers`]) — `x-user-id`, spelled once;
 //! - **the destructive-intent taxonomy** ([`intent`]) — `PurgeKind` /
 //!   `DestructiveIntent`, replacing the stringly-typed `"row"`/`"table"`
 //!   pair, plus the single intent→approval-request mapping;
@@ -149,7 +148,7 @@ mod tests {
 
     #[test]
     fn create_request_omits_none_requester_app_id() {
-        // App-credentialled path: the body must NOT carry requester_app_id
+        // Machine-token path: the body must NOT carry requester_app_id
         // (Granite binds it), so it must be absent from the JSON.
         let req = CreateApprovalRequest {
             request_type: ApprovalRequestType::OneTimeAction,
@@ -182,7 +181,7 @@ mod tests {
         // The requesting agent is a ChirpMachine, carried as requester_chirp_sub.
         assert_eq!(req.requester_chirp_sub.as_deref(), Some("agent_1"));
         assert_eq!(req.summary, "agent cleanup");
-        // App-credentialled callers let Granite bind the app id.
+        // Machine callers let Granite bind the app id.
         assert!(req.requester_app_id.is_none());
     }
 
@@ -219,6 +218,5 @@ mod tests {
     #[test]
     fn header_constants_match_granite_policy() {
         assert_eq!(headers::USER_ID, "x-user-id");
-        assert_eq!(headers::GRANITE_APP_ID, "x-granite-app-id");
     }
 }

@@ -16,8 +16,7 @@ destructive-intent taxonomy. It replaces three divergent hand-rolled clients
 - **A strict status enum** — `ApprovalRequestStatus` has no default and no
   catch-all. An unknown status string is a **loud decode error**, never a
   silent "pending" (the bug the hand-rolled clients carried via `_ => Pending`).
-- **Header policy** (`headers`): `x-user-id` and `x-granite-app-id`,
-  spelled once.
+- **Header policy** (`headers`): `x-user-id`, spelled once.
 - **Destructive-intent taxonomy** (`intent`): `PurgeKind::Row { rid }` /
   `PurgeKind::Table` carries its payload in the variant, so a table purge
   cannot carry a row id and a row purge cannot omit one. `DestructiveIntent::to_approval_request`
@@ -40,10 +39,10 @@ client models only what Granite serves.
 use granite_client::{ActingUser, Auth, DestructiveIntent, GraniteClient, VerifyGrantRequest};
 
 # async fn example() -> Result<(), granite_client::GraniteError> {
-// App-credentialled caller (Granite binds requester_app_id).
+// A machine-token caller (Granite binds requester_app_id from its client).
 let client = GraniteClient::new(
     "https://granite.example",
-    Auth::AppCredential { secret: "gas_…".into(), app_id: "amber".into() },
+    Auth::ChirpBearer("<chirp machine token>".into()),
 );
 
 // File a high-risk purge for a human to approve.
@@ -67,10 +66,9 @@ assert!(v.approved);
 ## Auth model
 
 - `Auth::ChirpBearer(token)` — a chirp identity token as the bearer (a
-  machine token, or a person's). Granite binds `requester_app_id` for a
-  machine token's bound app or client id; a person's bearer sets it.
-- `Auth::AppCredential { secret, app_id }` — sends `x-granite-app-id`; Granite
-  binds `requester_app_id` to the attested app, so leave it `None`.
+  machine token, or a person's), the only caller identity Granite takes.
+  Granite binds `requester_app_id` for a machine token's bound app or client
+  id; a person's bearer sets it.
 
 The acting user (`x-user-id`) is passed per call via `ActingUser::new(uid)`,
 since one service acts for many users.

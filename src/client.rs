@@ -13,20 +13,11 @@ use crate::model::{
 /// How the client authenticates to Granite.
 ///
 /// Each path Granite supports maps to one variant here, so a caller
-/// cannot half-configure (e.g. set an app id but forget to flag itself as
-/// app-credentialled, which silently sent the wrong headers in the
-/// hand-rolled clients).
+/// cannot half-configure one. A ChirpAuth token is the only caller identity
+/// (granite#76): the `gas_` app credential and the master
+/// internal-service-token are gone.
 #[derive(Debug, Clone)]
 pub enum Auth {
-    /// A registered app credential: the bearer secret plus the attested app
-    /// id sent as `x-granite-app-id`. Granite binds `requester_app_id` to
-    /// `app_id`, so created requests may omit it.
-    AppCredential {
-        /// The `gas_`-prefixed app secret.
-        secret: String,
-        /// The registered app id.
-        app_id: String,
-    },
     /// A chirp identity token presented as `Authorization: Bearer <token>`.
     ///
     /// This is the path Granite's operator gate consumes: Granite authenticates
@@ -36,11 +27,11 @@ pub enum Auth {
     /// machine token (minted by the caller's confidential client); the
     /// acting user is still named per call via the `x-user-id` header.
     ///
-    /// Unlike `AppCredential`, this carries no `x-granite-app-id`: it is not an
-    /// attested-app principal but a chirp-identity principal whose authority is
-    /// resolved server-side. Distinct from Granite's inbound `MachineAuth`
-    /// verify path (which is explicitly non-operator) — this asserts the
-    /// caller's identity to Granite, it does not verify someone else's.
+    /// A machine token's app is the one Granite binds to its client in deploy
+    /// config (granite#119), so the caller sends no app id of its own.
+    /// Distinct from Granite's inbound `MachineAuth` verify path (which is
+    /// explicitly non-operator) — this asserts the caller's identity to
+    /// Granite, it does not verify someone else's.
     ChirpBearer(String),
 }
 
@@ -82,17 +73,10 @@ impl GraniteClient {
     /// Apply the bearer + identity headers for an acting user. This is the
     /// single place the header policy is applied for outbound calls.
     fn authed(&self, builder: RequestBuilder, acting_user: &ActingUser) -> RequestBuilder {
-        let (token, app_id) = match &self.auth {
-            Auth::AppCredential { secret, app_id } => (secret.as_str(), Some(app_id.as_str())),
-            Auth::ChirpBearer(token) => (token.as_str(), None),
-        };
-        let mut b = builder
+        let Auth::ChirpBearer(token) = &self.auth;
+        builder
             .bearer_auth(token)
-            .header(headers::USER_ID, &acting_user.uid);
-        if let Some(app_id) = app_id {
-            b = b.header(headers::GRANITE_APP_ID, app_id);
-        }
-        b
+            .header(headers::USER_ID, &acting_user.uid)
     }
 
     async fn send_json<T: serde::de::DeserializeOwned>(
@@ -135,8 +119,8 @@ impl GraniteClient {
     }
 
     /// `POST /v1/approval-requests/{id}/withdraw`: retract a request this
-    /// caller filed, while it is still pending. Only the app credential or
-    /// machine client that filed it may; anyone else gets the same 404 as a
+    /// caller filed, while it is still pending. Only the machine client that
+    /// filed it may; anyone else gets the same 404 as a
     /// missing request, and a decided request is a 409. A withdrawal is not a
     /// decision, so it records nothing on the owner's decision log.
     pub async fn withdraw_approval_request(
@@ -394,24 +378,7 @@ mod tests {
             "Bearer chirp-machine-token"
         );
         assert_eq!(headers.get(headers::USER_ID).unwrap(), "operator-uid");
-        // A chirp-identity principal is not an attested app: no app-id header.
-        assert!(headers.get(headers::GRANITE_APP_ID).is_none());
-    }
-
-    #[test]
-    fn app_credential_still_sends_app_id() {
-        let headers = built_headers(
-            Auth::AppCredential {
-                secret: "gas_secret".to_owned(),
-                app_id: "drive".to_owned(),
-            },
-            &ActingUser::new("owner-uid"),
-        );
-        assert_eq!(
-            headers.get(reqwest::header::AUTHORIZATION).unwrap(),
-            "Bearer gas_secret"
-        );
-        assert_eq!(headers.get(headers::GRANITE_APP_ID).unwrap(), "drive");
-        assert_eq!(headers.get(headers::USER_ID).unwrap(), "owner-uid");
+        // Granite binds the app from the token: no app-id header goes out.
+        assert!(headers.get("x-granite-app-id").is_none());
     }
 }

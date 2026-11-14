@@ -126,9 +126,8 @@ impl SubjectKind {
 
 /// Body for `POST /v1/approval-requests` (and the project-scoped variant).
 ///
-/// `requester_app_id` is `Option`: an app-credentialled or chirp machine
-/// caller omits it (Granite binds it from the attested app id, overwriting
-/// anything sent), while a caller with no attested app (a person's chirp
+/// `requester_app_id` is `Option`: a chirp machine caller omits it (Granite
+/// binds it from the app its client is bound to, overwriting anything sent), while a caller with no attested app (a person's chirp
 /// bearer) MUST supply it. Encoding that as `Option` — and skipping it when
 /// `None` — keeps the wire body matching whichever auth path the caller is
 /// on.

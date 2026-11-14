@@ -37,7 +37,7 @@ pub use intent::{DestructiveIntent, PurgeKind};
 pub use model::{
     ApprovalGrant, ApprovalGrantStatus, ApprovalRequest, ApprovalRequestStatus,
     ApprovalRequestType, ApprovalRiskLevel, CreateApprovalRequest, GrantVerification,
-    VerifyGrantRequest,
+    SubjectKind, VerifyGrantRequest,
 };
 
 #[cfg(test)]

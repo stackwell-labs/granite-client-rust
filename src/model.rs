@@ -95,6 +95,35 @@ pub enum ApprovalGrantStatus {
     Revoked,
 }
 
+/// What kind of identity a request's requester, or a grant's subject, is.
+/// Mirrors Granite's `SubjectKind` (granite#82).
+///
+/// Granite omits the key for [`Self::App`], so a record that predates client
+/// subjects reads as `App`, and this crate omits it too when sending `App`.
+/// Deliberately strict like [`ApprovalRequestStatus`]: an unknown kind is a
+/// decode error, never read as `App`, since an enforcer that misreads whose
+/// grant it holds would match it against the wrong identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SubjectKind {
+    /// An app, or a ChirpAuth machine acting within it (`*_chirp_sub` set).
+    #[default]
+    App,
+    /// A public ChirpAuth client (a SPA such as gotta or porch) that holds no
+    /// credential of its own. The `*_app_id` is that client's id, and a grant
+    /// for it verifies only when the enforcer names the person's token's
+    /// `client_id` as [`VerifyGrantRequest::subject_client_id`].
+    ChirpClient,
+}
+
+impl SubjectKind {
+    /// Whether this is the default kind, which goes unsent on the wire.
+    #[must_use]
+    pub fn is_app(&self) -> bool {
+        *self == Self::App
+    }
+}
+
 /// Body for `POST /v1/approval-requests` (and the project-scoped variant).
 ///
 /// `requester_app_id` is `Option`: an app-credentialled or chirp machine
@@ -109,6 +138,13 @@ pub struct CreateApprovalRequest {
     pub requester_app_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requester_chirp_sub: Option<String>,
+    /// [`SubjectKind::ChirpClient`] files the request for a public client: the
+    /// grant it mints is matched on a person's token's `client_id`, so
+    /// `requester_app_id` is that client id. Only a caller that names the
+    /// requester itself (a person's bearer) may file one; Granite refuses it
+    /// from an attested app. Omitted when `App`.
+    #[serde(skip_serializing_if = "SubjectKind::is_app")]
+    pub requester_kind: SubjectKind,
     pub request_type: ApprovalRequestType,
     pub title: String,
     pub summary: String,
@@ -173,6 +209,9 @@ pub struct ApprovalRequest {
     pub requester_app_id: String,
     #[serde(default)]
     pub requester_chirp_sub: Option<String>,
+    /// `App` when Granite omits the key.
+    #[serde(default)]
+    pub requester_kind: SubjectKind,
     #[serde(default)]
     pub request_type: ApprovalRequestType,
     pub title: String,
@@ -240,6 +279,11 @@ pub struct ApprovalGrant {
     pub subject_app_id: String,
     #[serde(default)]
     pub subject_chirp_sub: Option<String>,
+    /// `App` when Granite omits the key. A [`SubjectKind::ChirpClient`] grant's
+    /// `subject_app_id` is a public client's id, and it verifies only with
+    /// [`VerifyGrantRequest::with_subject_client_id`].
+    #[serde(default)]
+    pub subject_kind: SubjectKind,
     pub service_id: String,
     pub resource: String,
     /// Every resource this grant covers. Empty ⇒ just `[resource]` (a grant from a
@@ -351,6 +395,13 @@ pub struct VerifyGrantRequest {
     /// than yourself as a registered privilege; naming yourself is free.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject_app_id: Option<String>,
+    /// The ChirpAuth `client_id` of the PERSON's token the enforcer
+    /// authenticated (granite#82). It is the only claim that matches a
+    /// [`SubjectKind::ChirpClient`] grant, which fails verification without
+    /// it, and it matches nothing else. Naming it is always speaking for
+    /// somebody else, so Granite requires the enforcer privilege.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_client_id: Option<String>,
 }
 
 impl VerifyGrantRequest {
@@ -398,6 +449,15 @@ impl VerifyGrantRequest {
     #[must_use]
     pub fn with_subject_app_id(mut self, app_id: impl Into<String>) -> Self {
         self.subject_app_id = Some(app_id.into());
+        self
+    }
+
+    /// Require the grant to be a [`SubjectKind::ChirpClient`] grant for this
+    /// public client: pass the `client_id` of the person's token you
+    /// authenticated, e.g. Drive verifying a grant for the SPA that called it.
+    #[must_use]
+    pub fn with_subject_client_id(mut self, client_id: impl Into<String>) -> Self {
+        self.subject_client_id = Some(client_id.into());
         self
     }
 }
@@ -451,6 +511,7 @@ mod warden_header_tests {
             request_id: Uuid::nil(),
             subject_app_id: "jot".into(),
             subject_chirp_sub: None,
+            subject_kind: SubjectKind::App,
             service_id: "drive".into(),
             resource: "drive:files".into(),
             resources: vec![],
@@ -555,5 +616,95 @@ mod create_request_expiry_tests {
     fn expires_at_is_omitted_when_none() {
         let v = serde_json::to_value(request(None)).unwrap();
         assert!(v.as_object().unwrap().get("expires_at").is_none());
+    }
+}
+
+#[cfg(test)]
+mod chirp_client_subject_tests {
+    use super::*;
+
+    // A granite#82 client grant exactly as Granite's verify route returned it
+    // (granite `backend/src/routes.rs`, an enforcer verifying alice's grant to
+    // gotta): `subject_kind` set, no `subject_chirp_sub`.
+    const CLIENT_GRANT: &str = r#"{"id":"67d19e39-2a76-4b15-88b3-e909a331cb78","owner_uid":"alice","request_id":"c1f9c623-77c3-4543-aa9d-50b27eb5fe2d","subject_app_id":"cs_live_gotta","subject_kind":"chirp_client","service_id":"storage:drive","resource":"storage:drive:/Client","scopes":["storage.read"],"expires_at":null,"status":"active","environment":"Prod","created_at":"2026-11-14T08:02:42.188825068Z","revoked_at":null}"#;
+
+    #[test]
+    fn client_grant_decodes_its_kind() {
+        let g: ApprovalGrant = serde_json::from_str(CLIENT_GRANT).expect("decode");
+        assert_eq!(g.subject_kind, SubjectKind::ChirpClient);
+        assert_eq!(g.subject_app_id, "cs_live_gotta");
+    }
+
+    /// Granite omits the key for an app or machine grant.
+    #[test]
+    fn grant_without_kind_is_an_app_grant() {
+        let mut v: Value = serde_json::from_str(CLIENT_GRANT).unwrap();
+        v.as_object_mut().unwrap().remove("subject_kind");
+        let g: ApprovalGrant = serde_json::from_value(v).expect("decode");
+        assert_eq!(g.subject_kind, SubjectKind::App);
+    }
+
+    /// An unknown kind is drift to notice, not an app grant.
+    #[test]
+    fn unknown_kind_is_a_decode_error() {
+        let bad = CLIENT_GRANT.replace("chirp_client", "chirp_robot");
+        assert!(serde_json::from_str::<ApprovalGrant>(&bad).is_err());
+    }
+
+    #[test]
+    fn request_decodes_requester_kind() {
+        let j = r#"{
+          "id":"00000000-0000-0000-0000-000000000001",
+          "owner_uid":"alice",
+          "requester_app_id":"cs_live_gotta",
+          "requester_kind":"chirp_client",
+          "title":"t","summary":"s",
+          "requested_action":"a","requested_resource":"r",
+          "status":"pending"
+        }"#;
+        let r: ApprovalRequest = serde_json::from_str(j).expect("decode");
+        assert_eq!(r.requester_kind, SubjectKind::ChirpClient);
+    }
+
+    fn create(kind: SubjectKind) -> Value {
+        serde_json::to_value(CreateApprovalRequest {
+            requester_app_id: Some("cs_live_gotta".into()),
+            requester_kind: kind,
+            title: "t".into(),
+            summary: "s".into(),
+            requested_action: "a".into(),
+            requested_resource: "r".into(),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn create_sends_chirp_client_kind() {
+        assert_eq!(
+            create(SubjectKind::ChirpClient)["requester_kind"],
+            "chirp_client"
+        );
+    }
+
+    /// The default kind leaves the body as it was before the field existed.
+    #[test]
+    fn create_omits_app_kind() {
+        assert!(create(SubjectKind::App).get("requester_kind").is_none());
+    }
+
+    #[test]
+    fn verify_sends_subject_client_id() {
+        let v = serde_json::to_value(
+            VerifyGrantRequest::for_grant(Uuid::nil()).with_subject_client_id("cs_live_gotta"),
+        )
+        .unwrap();
+        assert_eq!(v["subject_client_id"], "cs_live_gotta");
+    }
+
+    #[test]
+    fn verify_omits_subject_client_id_when_none() {
+        let v = serde_json::to_value(VerifyGrantRequest::for_grant(Uuid::nil())).unwrap();
+        assert!(v.get("subject_client_id").is_none());
     }
 }

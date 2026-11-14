@@ -9,7 +9,10 @@ destructive-intent taxonomy. It replaces three divergent hand-rolled clients
 
 - **Wire types** (`model`) matching what Granite actually serves:
   `CreateApprovalRequest`, `ApprovalRequest`, `VerifyGrantRequest`,
-  `GrantVerification`, `ApprovalGrant`.
+  `GrantVerification`, `ApprovalGrant`, and `SubjectKind` (an app, or a public
+  ChirpAuth client whose grant an enforcer verifies with
+  `VerifyGrantRequest::with_subject_client_id`, naming the person's token's
+  `client_id`).
 - **A strict status enum** — `ApprovalRequestStatus` has no default and no
   catch-all. An unknown status string is a **loud decode error**, never a
   silent "pending" (the bug the hand-rolled clients carried via `_ => Pending`).

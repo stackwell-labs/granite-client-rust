@@ -11,20 +11,9 @@
 //! decode error rather than a silent "pending". A divergent server that
 //! starts returning a new status must be noticed, not absorbed.
 
-use crate::error::GraniteError;
-use capability::Environment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-
-/// Serde default for [`ApprovalRequest::environment`] during the env-split
-/// rollout: an approval from a Granite that predates the split carries no
-/// environment, and the safe reading of an untagged approval is the strictest
-/// one — `Prod` (which a `Test` caller will then refuse via
-/// [`ApprovalRequest::assert_environment`], and a `Prod` caller accepts).
-fn environment_prod_default() -> Environment {
-    Environment::Prod
-}
 
 /// The shape of approval Granite is being asked to grant. Mirrors
 /// Granite's `ApprovalRequestType`.
@@ -226,14 +215,6 @@ pub struct ApprovalRequest {
     #[serde(default)]
     pub requested_scopes: Vec<String>,
     pub status: ApprovalRequestStatus,
-    /// The trust environment Granite minted this approval in — `Prod` or
-    /// `Test { tenant }`. Derived by Granite from the caller's keyset/token, NOT
-    /// requester-supplied, so it cannot be forged. Defaults to `Prod` only for
-    /// transition (an approval from a pre-split Granite); a consumer about to run
-    /// an irreversible action MUST gate on [`ApprovalRequest::assert_environment`]
-    /// so a `Test` approval can never authorize a `Prod` one.
-    #[serde(default = "environment_prod_default")]
-    pub environment: Environment,
     #[serde(default)]
     pub grant_id: Option<Uuid>,
     #[serde(default)]
@@ -248,25 +229,6 @@ pub struct ApprovalRequest {
     /// polling client return "denied + why" without a second fetch.
     #[serde(default)]
     pub decision_reason: Option<String>,
-}
-
-impl ApprovalRequest {
-    /// Isolation guard — call this before acting on the approval for any
-    /// irreversible operation. Confirms the approval was minted in the same
-    /// trust environment the caller is running in; a `Test` approval must never
-    /// authorize a `Prod` destructive action, nor a `Prod` approval be settled
-    /// by a `Test` caller. This is `capability`'s "no laundering into prod",
-    /// enforced on the approval plane at the point of use.
-    pub fn assert_environment(&self, expected: &Environment) -> Result<(), GraniteError> {
-        // Delegates to capability's ONE canonical no-laundering guard (since
-        // capability v0.3.0), keeping this crate's `GraniteError` surface stable.
-        self.environment.ensure_matches(expected).map_err(|_| {
-            GraniteError::EnvironmentMismatch {
-                expected: expected.to_string(),
-                found: self.environment.to_string(),
-            }
-        })
-    }
 }
 
 /// A standing grant record, as embedded in a verification response.
@@ -301,14 +263,6 @@ pub struct ApprovalGrant {
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub expires_at: Option<time::OffsetDateTime>,
     pub status: ApprovalGrantStatus,
-    /// The trust environment Granite minted this grant in — `Prod` or
-    /// `Test { tenant }`. Derived by Granite from the caller's keyset/token, NOT
-    /// requester-supplied, so it cannot be forged. Defaults to `Prod` only for
-    /// transition (a grant from a pre-split Granite); a consumer about to run an
-    /// irreversible action MUST gate on [`ApprovalGrant::assert_environment`] so a
-    /// `Test` grant can never authorize a `Prod` one.
-    #[serde(default = "environment_prod_default")]
-    pub environment: Environment,
     /// The human-Warden WebAuthn assertion Granite verified over this grant's
     /// terms before minting. Present only for Warden-gated grants (fail-closed
     /// enforcing services like Drive require it). Use
@@ -353,23 +307,6 @@ impl ApprovalGrant {
         } else {
             self.resources.iter().map(String::as_str).collect()
         }
-    }
-
-    /// Isolation guard — call this before acting on the grant for any
-    /// irreversible operation. Confirms the grant was minted in the same trust
-    /// environment the caller is running in; a `Test` grant must never authorize
-    /// a `Prod` destructive action, nor a `Prod` grant be exercised by a `Test`
-    /// caller. This is `capability`'s "no laundering into prod", enforced on the
-    /// grant plane at the point of use.
-    pub fn assert_environment(&self, expected: &Environment) -> Result<(), GraniteError> {
-        // Delegates to capability's ONE canonical no-laundering guard (since
-        // capability v0.3.0), keeping this crate's `GraniteError` surface stable.
-        self.environment.ensure_matches(expected).map_err(|_| {
-            GraniteError::EnvironmentMismatch {
-                expected: expected.to_string(),
-                found: self.environment.to_string(),
-            }
-        })
     }
 }
 
@@ -518,7 +455,6 @@ mod warden_header_tests {
             limits: None,
             expires_at: None,
             status: ApprovalGrantStatus::Active,
-            environment: environment_prod_default(),
             warden_assertion: assertion,
         }
     }
